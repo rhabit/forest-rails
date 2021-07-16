@@ -10,7 +10,7 @@ module ForestLiana
 
       # NOTICE: Do not unscope with the paranoia gem to prevent the retrieval
       #         of deleted records.
-      use_act_as_paranoid ? @resource : @resource.unscoped
+      use_act_as_paranoid ? @resource : @resource
     end
 
     def includes_for_serialization
