@@ -8,6 +8,8 @@ module ForestLiana
       add_columns
       add_associations
 
+      collection.fields.sort_by!.with_index { |k, idx| [k[:field].to_s, idx] }
+
       # NOTICE: Add ActsAsTaggable fields
       if @model.try(:taggable?) && @model.respond_to?(:acts_as_taggable) &&
         @model.acts_as_taggable.respond_to?(:to_a)
@@ -261,6 +263,7 @@ module ForestLiana
           FOREST_LOGGER.warn "The association \"#{association.name.to_s}\" " \
             "does not seem to exist for model \"#{@model.name}\"."
         rescue => exception
+          FOREST_REPORTER.report exception
           FOREST_LOGGER.error "An error occured trying to add " \
             "\"#{association.name.to_s}\" association:\n#{exception}"
         end
@@ -350,10 +353,12 @@ module ForestLiana
         type = 'Number'
       when :json, :jsonb, :hstore
         type = 'Json'
-      when :string, :text, :citext, :uuid
+      when :string, :text, :citext
         type = 'String'
       when :time
         type = 'Time'
+      when :uuid
+        type = 'Uuid'
       end
 
       is_array = (column.respond_to?(:array) && column.array == true)

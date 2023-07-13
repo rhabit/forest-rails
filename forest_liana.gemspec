@@ -18,7 +18,7 @@ Gem::Specification.new do |s|
   s.test_files = Dir["test/**/*", "spec/**/*"]
 
   s.add_runtime_dependency "rails", ">= 4.0"
-  s.add_runtime_dependency "jsonapi-serializers", ">= 0.14.0"
+  s.add_runtime_dependency "forestadmin-jsonapi-serializers", ">= 0.14.0"
   s.add_runtime_dependency "jwt"
   s.add_runtime_dependency "rack-cors"
   s.add_runtime_dependency "arel-helpers"
@@ -28,6 +28,7 @@ Gem::Specification.new do |s|
   s.add_runtime_dependency "httparty"
   s.add_runtime_dependency "ipaddress"
   s.add_runtime_dependency "json"
-  s.add_runtime_dependency "json-jwt"
-  s.add_runtime_dependency "openid_connect"
+  s.add_runtime_dependency "json-jwt", "~> 1.15.0"
+  s.add_runtime_dependency "openid_connect", "1.4.2"
+  s.add_runtime_dependency "deepsort"
 end

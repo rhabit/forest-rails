@@ -1,21 +1,23 @@
 module ForestLiana
   class LeaderboardStatGetter < StatGetter
-    def initialize(resource, params)
-      @resource = resource
-      @params = params
-      @model_relationship =  @resource.reflect_on_association(@params[:relationship_field]).klass
-      compute_includes()
-      @label_field = @params[:label_field]
-      @aggregate = @params[:aggregate].downcase
-      @aggregate_field = @params[:aggregate_field]
-      @limit = @params[:limit]
-      @groub_by = "#{@resource.table_name}.#{@label_field}"
+    def initialize(parent_model, params, forest_user)
+      @scoped_parent_model = get_scoped_model(parent_model, forest_user, params[:timezone])
+      child_model = @scoped_parent_model.reflect_on_association(params[:relationshipFieldName]).klass
+      @scoped_child_model = get_scoped_model(child_model, forest_user, params[:timezone])
+      @label_field = params[:labelFieldName]
+      @aggregate = params[:aggregator].downcase
+      @aggregate_field = params[:aggregateFieldName]
+      @limit = params[:limit]
+      @group_by = "#{@scoped_parent_model.table_name}.#{@label_field}"
     end
 
     def perform
-      result = @model_relationship
-        .joins(@includes)
-        .group(@groub_by)
+      includes = ForestLiana::QueryHelper.get_one_association_names_symbol(@scoped_child_model)
+
+      result = @scoped_child_model
+        .joins(includes)
+        .where({ @scoped_parent_model.name.downcase.to_sym => @scoped_parent_model })
+        .group(@group_by)
         .order(order)
         .limit(@limit)
         .send(@aggregate, @aggregate_field)
@@ -24,8 +26,12 @@ module ForestLiana
       @record = Model::Stat.new(value: result)
     end
 
-    def compute_includes
-      @includes = ForestLiana::QueryHelper.get_one_association_names_symbol(@model_relationship)
+    def get_scoped_model(model, forest_user, timezone)
+      scope_filters = ForestLiana::ScopeManager.get_scope_for_user(forest_user, model.name, as_string: true)
+
+      return model.unscoped if scope_filters.blank?
+
+      FiltersParser.new(scope_filters, model, timezone, @params).apply_filters
     end
 
     def order

@@ -4,12 +4,13 @@ module ForestLiana
 
     attr_reader :fields_searched
 
-    def initialize(params, includes, collection)
+    def initialize(params, includes, collection, user)
       @params = params
       @includes = includes
       @collection = collection
       @fields_searched = []
       @search = @params[:search]
+      @user = user
     end
 
     def perform(resource)
@@ -18,8 +19,10 @@ module ForestLiana
         ForestLiana::QueryHelper.get_tables_associated_to_relations_name(@resource)
       @records = search_param
 
-      unless @params[:filters].blank?
-        @records = FiltersParser.new(@params[:filters], @records, @params[:timezone]).apply_filters
+      filters = ForestLiana::ScopeManager.append_scope_for_user(@params[:filters], @user, @collection.name)
+
+      unless filters.blank?
+        @records = FiltersParser.new(filters, @records, @params[:timezone]).apply_filters
       end
 
       if @search
@@ -28,6 +31,7 @@ module ForestLiana
             begin
               @records = field[:search].call(@records, @search)
             rescue => exception
+              FOREST_REPORTER.report exception
               FOREST_LOGGER.error "Cannot search properly on Smart Field:\n" \
                 "#{exception}"
             end
@@ -57,7 +61,7 @@ module ForestLiana
         conditions = []
 
         @resource.columns.each_with_index do |column, index|
-          @fields_searched << column.name if text_type? column.type
+          @fields_searched << column.name if text_type?(column.type) || column.type == :uuid
           column_name = format_column_name(@resource.table_name, column.name)
           if (@collection.search_fields && !@collection.search_fields.include?(column.name))
             conditions
@@ -69,6 +73,8 @@ module ForestLiana
               conditions << "#{@resource.table_name}.id = :search_value_for_uuid"
             end
           # NOTICE: Rails 3 do not have a defined_enums method
+          elsif REGEX_UUID.match(@search) && column.type == :uuid
+            conditions << "#{column_name}  = :search_value_for_uuid"
           elsif @resource.respond_to?(:defined_enums) &&
             @resource.defined_enums.has_key?(column.name) &&
             !@resource.defined_enums[column.name][@search.downcase].nil?
@@ -170,10 +176,6 @@ module ForestLiana
             column = field
           end
         end
-      elsif @resource.column_names.include?('created_at')
-        column = ForestLiana::AdapterHelper.format_column_name(@resource.table_name, 'created_at')
-      elsif @resource.column_names.include?('id')
-        column = ForestLiana::AdapterHelper.format_column_name(@resource.table_name, 'id')
       end
 
       if column

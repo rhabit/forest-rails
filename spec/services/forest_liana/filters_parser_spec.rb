@@ -1,4 +1,6 @@
 module ForestLiana
+  include ActiveSupport::Testing::TimeHelpers
+
   describe FiltersParser do
     let(:timezone) { 'Europe/Paris' }
     let(:resource) { Tree }
@@ -11,6 +13,7 @@ module ForestLiana
     let(:date_condition_1) { { 'field' => 'created_at', 'operator' => 'before', 'value' => 2.hours.ago } }
     let(:date_condition_2) { { 'field' => 'created_at', 'operator' => 'today' } }
     let(:date_condition_3) { { 'field' => 'created_at', 'operator' => 'previous_x_days', 'value' => 2 } }
+    let(:presence_condition) { { 'field' => 'name', 'operator' => 'present' } }
 
     before {
       island = Island.create!(name: "L'île de la muerta")
@@ -26,18 +29,6 @@ module ForestLiana
       User.destroy_all
       Island.destroy_all
     }
-
-    describe 'initialization' do
-      context 'badly formated filters' do
-        let(:filter_parser) { described_class.new('{ toto: 1', resource, timezone) }
-
-        it {
-          expect {
-            described_class.new('{ toto: 1', resource, timezone)
-          }.to raise_error(ForestLiana::Errors::HTTP422Error, 'Invalid filters JSON format')
-        }
-      end
-    end
 
     describe 'apply_filters' do
       let(:parsed_filters) { filter_parser.apply_filters }
@@ -274,6 +265,11 @@ module ForestLiana
         let(:filters) { { 'aggregator' => 'or', 'conditions' => [simple_condition_2, simple_condition_3] } }
         it { expect(resource.where(query).count).to eq 2 }
       end
+
+      context "'name ends_with \"3\"' 'or' 'name is not null'" do
+        let(:filters) { { 'aggregator' => 'or', 'conditions' => [simple_condition_2, presence_condition] } }
+        it { expect(resource.where(query).count).to eq 3 }
+      end
     end
 
     describe 'parse_condition' do
@@ -281,7 +277,27 @@ module ForestLiana
       let(:result) { filter_parser.parse_condition(condition) }
 
       context 'on valid condition' do
-        it { expect(result).to eq "\"trees\".\"name\" LIKE '%3'" }
+        context 'when the condition uses the contains operator' do
+          it { expect(result).to eq "\"trees\".\"name\" LIKE '%3'" }
+        end
+
+        context 'when the condition uses the blank operator' do
+          let(:condition) { { 'field' => 'name', 'operator' => 'blank' } }
+
+          it { expect(result).to eq "\"trees\".\"name\" IS NULL" }
+        end
+
+        context 'when the condition uses the presence operator' do
+          let(:condition) { presence_condition }
+
+          it { expect(result).to eq "\"trees\".\"name\" IS NOT NULL" }
+        end
+
+        context 'when the condition uses the in operator' do
+          let(:condition) { { 'field' => 'name', 'operator' => 'in', 'value' => ['Tree n1', 'Tree n3'] } }
+
+          it { expect(result).to eq "\"trees\".\"name\" IN ('Tree n1','Tree n3')" }
+        end
       end
 
       context 'on belongs_to condition' do
@@ -370,6 +386,8 @@ module ForestLiana
         it { expect(filter_parser.parse_value('present', nil)).to eq nil }
         it { expect(filter_parser.parse_value('equal', 'yes')).to eq 'yes' }
         it { expect(filter_parser.parse_value('blank', nil)).to eq nil }
+        it { expect(filter_parser.parse_value('in', 'yes,maybe   ,no  ')).to eq ['yes', 'maybe', 'no'] }
+        it { expect(filter_parser.parse_value('in', 123)).to eq 123 }
       end
 
       context 'on unknown operator' do
@@ -471,6 +489,23 @@ module ForestLiana
       let(:filters) { { 'aggregator' => 'and', 'conditions' => [date_condition_3, simple_condition_1] } }
 
       it { expect(filter_parser.apply_filters_on_previous_interval(date_condition_3).count).to eq 1 }
+    end
+
+    describe 'parse_condition with time operator' do
+      let(:freeze_time) { Time.utc(2022, 5, 22, 0, 0, 0) }
+      before do
+        Timecop.freeze freeze_time
+      end
+
+      after do
+        Timecop.return
+      end
+
+      it 'parse_condition should return the correct query interval' do
+        res = filter_parser.parse_condition({ 'field' => 'created_at', 'operator' => 'previous_quarter', 'value' => nil })
+
+        expect(res[res.index('BETWEEN')..-1]).to eq "BETWEEN '2021-12-31 22:00:00 UTC' AND '2022-03-31 21:59:59 UTC'"
+      end
     end
   end
 end
